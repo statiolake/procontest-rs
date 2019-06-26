@@ -1,7 +1,7 @@
-#[cfg(test)]
-mod tests {
-    #[test]
-    fn it_works() {
-        assert_eq!(2 + 2, 4);
-    }
+pub enum TestResult {
+    Accepted,
+}
+
+pub fn do_test(_stdin: &str, _expected_stdout: &str) -> TestResult {
+    TestResult::Accepted
 }
