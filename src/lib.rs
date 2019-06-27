@@ -52,7 +52,9 @@ pub enum WrongAnswerKind {
     },
     NumOfTokenDiffers {
         expected: usize,
+        expected_line_len: usize,
         actual: usize,
+        actual_line_len: usize,
         lineno: usize,
     },
     TokenDiffers {
@@ -170,14 +172,21 @@ impl Context {
         VerifyResult::Pass
     }
 
-    fn verify_line(&self, expected: &str, actual: &str, lineno: usize) -> Vec<WrongAnswerKind> {
-        let expected = Token::parse_line(expected, lineno);
-        let actual = Token::parse_line(actual, lineno);
+    fn verify_line(
+        &self,
+        expected_line: &str,
+        actual_line: &str,
+        lineno: usize,
+    ) -> Vec<WrongAnswerKind> {
+        let expected = Token::parse_line(expected_line, lineno);
+        let actual = Token::parse_line(actual_line, lineno);
 
         if expected.len() != actual.len() {
             return vec![WrongAnswerKind::NumOfTokenDiffers {
                 expected: expected.len(),
                 actual: actual.len(),
+                expected_line_len: expected_line.len(),
+                actual_line_len: actual_line.len(),
                 lineno,
             }];
         }
@@ -325,7 +334,12 @@ pub fn format(result: TestResult) -> String {
     match result {
         TestResult::Accepted => "Accepted.".into(),
         TestResult::PresentationError => "Presentation error.".into(),
-        TestResult::WrongAnswer(wa) => format!("Wrong Answer:\n{}", format_wa(*wa)),
+        TestResult::WrongAnswer(wa) => format!(
+            "Wrong Answer.\n\nexpected stdout:\n\n{}\nactual stdout:\n\n{}\nerrors:\n\n{}",
+            joinl(&wa.context.expected),
+            joinl(&wa.context.actual),
+            format_wa(*wa)
+        ),
         TestResult::RuntimeError(re) => format!("Runtime Error: {}", format_re(re)),
     }
 }
@@ -343,19 +357,45 @@ fn format_wa(wa: WrongAnswer) -> String {
 
             WrongAnswerKind::NumOfTokenDiffers {
                 expected,
+                expected_line_len,
                 actual,
+                actual_line_len,
                 lineno,
-            } => format!(
-                "At line {}: the number of tokens is different. expected: {}, actual: {}",
-                lineno, expected, actual
-            ),
+            } => {
+                expected_spans.push(Span(
+                    LineColumn {
+                        line: lineno,
+                        column: 0,
+                    },
+                    LineColumn {
+                        line: lineno,
+                        column: expected_line_len,
+                    },
+                ));
+                actual_spans.push(Span(
+                    LineColumn {
+                        line: lineno,
+                        column: 0,
+                    },
+                    LineColumn {
+                        line: lineno,
+                        column: actual_line_len,
+                    },
+                ));
+                format!(
+                    "At line {}: the number of tokens is different. expected: {}, actual: {}",
+                    lineno + 1,
+                    expected,
+                    actual
+                )
+            }
 
             WrongAnswerKind::TokenDiffers { expected, actual } => {
                 expected_spans.push(expected.span);
                 actual_spans.push(actual.span);
                 format!(
                     "At line {}: Token differs. expected: {}, actual: {}",
-                    expected.span.start().line,
+                    expected.span.start().line + 1,
                     expected,
                     actual,
                 )
@@ -363,7 +403,7 @@ fn format_wa(wa: WrongAnswer) -> String {
         })
     }
 
-    let messages = joinl(messages);
+    let messages = joinl(&messages);
     let diff = format_diff(
         wa.context.expected,
         wa.context.actual,
@@ -374,10 +414,10 @@ fn format_wa(wa: WrongAnswer) -> String {
     format!("{}\n{}", messages, diff)
 }
 
-fn joinl(ss: Vec<String>) -> String {
+fn joinl(ss: &[String]) -> String {
     let mut res = String::new();
     for s in ss {
-        res.push_str(&s);
+        res.push_str(s);
         res.push('\n');
     }
     res
@@ -389,12 +429,9 @@ fn format_diff(
     expected_spans: Vec<Span>,
     actual_spans: Vec<Span>,
 ) -> String {
-    fn fallback(expected: Vec<String>, actual: Vec<String>) -> String {
-        format!(
-            "expected:\n{}\nactual:\n{}\n",
-            joinl(expected),
-            joinl(actual),
-        )
+    fn fallback(_expected: Vec<String>, _actual: Vec<String>) -> String {
+        "WARNING: Cannot determine a terminal size or too narrow terminal.  Cannot use diff view."
+            .into()
     }
 
     let lineno_delim = " | ";
@@ -490,7 +527,12 @@ fn format_diff(
     };
 
     use itertools::Itertools;
-    joinl(body.into_iter().interleave(span.into_iter()).collect())
+    joinl(
+        &body
+            .into_iter()
+            .interleave(span.into_iter())
+            .collect::<Vec<_>>(),
+    )
 }
 
 fn format_re(re: RuntimeErrorKind) -> String {
@@ -603,6 +645,8 @@ mod test {
                 details: vec![WrongAnswerKind::NumOfTokenDiffers {
                     expected: 2,
                     actual: 1,
+                    expected_line_len: 3,
+                    actual_line_len: 1,
                     lineno: 0,
                 }]
             })),
@@ -616,6 +660,8 @@ mod test {
                 details: vec![WrongAnswerKind::NumOfTokenDiffers {
                     expected: 2,
                     actual: 3,
+                    expected_line_len: 3,
+                    actual_line_len: 5,
                     lineno: 0,
                 }]
             })),
@@ -629,6 +675,8 @@ mod test {
                 details: vec![WrongAnswerKind::NumOfTokenDiffers {
                     expected: 2,
                     actual: 1,
+                    expected_line_len: 3,
+                    actual_line_len: 4,
                     lineno: 0,
                 }]
             })),
@@ -790,8 +838,8 @@ mod test {
     #[test]
     fn formatting() {
         let ctx = Context::new(
-            vec![S("1 2 -1"), S("asdf jkl fsd"), S("")],
-            vec![S("4 3 -01"), S("asdf jkl fsh"), S("")],
+            vec![S("1 2 -1"), S("2   3"), S("asdf jkl fsd"), S("")],
+            vec![S("4 3 -01"), S("2 3"), S("asdf jkl fsh"), S("")],
             S(""),
         );
         println!("{}", format(ctx.verify()));
