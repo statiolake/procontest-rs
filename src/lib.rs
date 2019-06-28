@@ -64,8 +64,8 @@ macro_rules! testcase {
     (id: $id:ident) => {
         testcase! {
             id: $id,
-            stdin: include_str!(stringify!($id), concat!(stringify!($id), "_in.txt")),
-            expect: include_str!(stringify!($id), concat!(stringify!($id), "_out.txt")),
+            stdin: include_str!(concat!(stringify!($id), "_in.txt")),
+            expect: include_str!(concat!(stringify!($id), "_out.txt")),
         }
     };
     (id: $id:ident, stdin: $stdin:expr, expect: $expect:expr $(,)*) => {
