@@ -59,6 +59,26 @@ pub enum RuntimeErrorKind {
     InvalidUtf8,
 }
 
+#[macro_export]
+macro_rules! testcase {
+    (id: $id:ident) => {
+        testcase! {
+            id: $id,
+            stdin: include_str!(concat!("in", stringify!($id), ".txt")),
+            expect: include_str!(concat!("out", stringify!($id), ".txt")),
+        }
+    };
+    (id: $id:ident, stdin: $stdin:expr, expect: $expect:expr $(,)*) => {
+        #[test]
+        fn $id() {
+            let res = $crate::do_test(stringify!($id), $stdin, $expect);
+            if res != $crate::TestResult::Accepted {
+                panic!("{}", format(&res));
+            }
+        }
+    };
+}
+
 pub fn do_test(test_id: &str, stdin: &str, expected: &str) -> TestResult {
     let test_dir = TestDir::new(BINARY_NAME, test_id);
 
