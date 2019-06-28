@@ -3,6 +3,10 @@ name = "procon-test-rs"
 version = "0.1.0"
 authors = ["statiolake <statiolake@gmail.com>"]
 edition = "2018"
+repository = "https://github.com/statiolake/procontest-rs"
+license = "MIT OR Apache-2.0"
+readme = "README.md"
+description = "Test utility for competitive programming"
 
 [dependencies]
 cli_test_dir = "0.1.7"
