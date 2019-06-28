@@ -20,27 +20,18 @@ pub struct WrongAnswer {
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub struct LineColumn {
+pub struct Span {
     line: usize,
-    column: usize,
+    range: (usize, usize),
 }
-
-impl LineColumn {
-    pub fn new(line: usize, column: usize) -> LineColumn {
-        LineColumn { line, column }
-    }
-}
-
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub struct Span(LineColumn, LineColumn);
 
 impl Span {
-    fn start(&self) -> LineColumn {
-        self.0
+    fn start(&self) -> usize {
+        self.range.0
     }
 
-    fn end(&self) -> LineColumn {
-        self.1
+    fn end(&self) -> usize {
+        self.range.1
     }
 }
 
@@ -52,10 +43,9 @@ pub enum WrongAnswerKind {
     },
     NumOfTokenDiffers {
         expected: usize,
-        expected_line_len: usize,
         actual: usize,
-        actual_line_len: usize,
-        lineno: usize,
+        expected_span: Span,
+        actual_span: Span,
     },
     TokenDiffers {
         expected: Token,
@@ -182,12 +172,21 @@ impl Context {
         let actual = Token::parse_line(actual_line, lineno);
 
         if expected.len() != actual.len() {
+            let expected_span = Span {
+                line: lineno,
+                range: (0, expected_line.len()),
+            };
+
+            let actual_span = Span {
+                line: lineno,
+                range: (0, actual_line.len()),
+            };
+
             return vec![WrongAnswerKind::NumOfTokenDiffers {
                 expected: expected.len(),
                 actual: actual.len(),
-                expected_line_len: expected_line.len(),
-                actual_line_len: actual_line.len(),
-                lineno,
+                expected_span,
+                actual_span,
             }];
         }
 
@@ -263,10 +262,10 @@ impl Token {
         if line.contains("  ") || line.starts_with(' ') || line.ends_with(' ') {
             return vec![Token::new(
                 TokenKind::String(line.into()),
-                Span(
-                    LineColumn::new(lineno, 0),
-                    LineColumn::new(lineno, line.len()),
-                ),
+                Span {
+                    line: lineno,
+                    range: (0, line.len()),
+                },
             )];
         }
 
@@ -295,14 +294,16 @@ impl Token {
         .map(|(startno, endno, token)| {
             Token::parse(
                 &token,
-                LineColumn::new(lineno, startno),
-                LineColumn::new(lineno, endno),
+                Span {
+                    line: lineno,
+                    range: (startno, endno),
+                },
             )
         })
         .collect()
     }
 
-    fn parse(token: &str, start: LineColumn, end: LineColumn) -> Token {
+    fn parse(token: &str, span: Span) -> Token {
         // A token starting with zero is rarely intended to be a number so treat it as a stirng.
         // If it were not handled specially, the value would be parsed as an integer.
         if token != "0"
@@ -311,22 +312,22 @@ impl Token {
             && !token.starts_with("-0.")
             && (token.starts_with('0') || token.starts_with("-0"))
         {
-            return Token::new(TokenKind::String(token.into()), Span(start, end));
+            return Token::new(TokenKind::String(token.into()), span);
         }
 
         if let Ok(uint) = token.parse() {
-            return Token::new(TokenKind::Uint(uint), Span(start, end));
+            return Token::new(TokenKind::Uint(uint), span);
         }
 
         if let Ok(int) = token.parse() {
-            return Token::new(TokenKind::Int(int), Span(start, end));
+            return Token::new(TokenKind::Int(int), span);
         }
 
         if let Ok(float) = token.parse() {
-            return Token::new(TokenKind::Float(float), Span(start, end));
+            return Token::new(TokenKind::Float(float), span);
         }
 
-        Token::new(TokenKind::String(token.into()), Span(start, end))
+        Token::new(TokenKind::String(token.into()), span)
     }
 }
 
@@ -357,45 +358,28 @@ fn format_wa(wa: WrongAnswer) -> String {
 
             WrongAnswerKind::NumOfTokenDiffers {
                 expected,
-                expected_line_len,
                 actual,
-                actual_line_len,
-                lineno,
+                expected_span,
+                actual_span,
             } => {
-                expected_spans.push(Span(
-                    LineColumn {
-                        line: lineno,
-                        column: 0,
-                    },
-                    LineColumn {
-                        line: lineno,
-                        column: expected_line_len,
-                    },
-                ));
-                actual_spans.push(Span(
-                    LineColumn {
-                        line: lineno,
-                        column: 0,
-                    },
-                    LineColumn {
-                        line: lineno,
-                        column: actual_line_len,
-                    },
-                ));
+                assert_eq!(expected_span.line, actual_span.line);
+                expected_spans.push(expected_span);
+                actual_spans.push(actual_span);
                 format!(
                     "At line {}: the number of tokens is different. expected: {}, actual: {}",
-                    lineno + 1,
+                    expected_span.line + 1,
                     expected,
                     actual
                 )
             }
 
             WrongAnswerKind::TokenDiffers { expected, actual } => {
+                assert_eq!(expected.span.line, actual.span.line);
                 expected_spans.push(expected.span);
                 actual_spans.push(actual.span);
                 format!(
                     "At line {}: Token differs. expected: {}, actual: {}",
-                    expected.span.start().line + 1,
+                    expected.span.line + 1,
                     expected,
                     actual,
                 )
@@ -482,10 +466,11 @@ fn format_diff(
     let span = {
         let organize_spans = |spans: Vec<Span>| -> Vec<Vec<(usize, usize)>> {
             let mut organized = vec![Vec::new(); max_lineno];
+
             for span in spans {
-                assert_eq!(span.start().line, span.end().line);
-                organized[span.start().line].push((span.start().column, span.end().column));
+                organized[span.line].push((span.start(), span.end()));
             }
+
             organized
         };
 
@@ -645,9 +630,14 @@ mod test {
                 details: vec![WrongAnswerKind::NumOfTokenDiffers {
                     expected: 2,
                     actual: 1,
-                    expected_line_len: 3,
-                    actual_line_len: 1,
-                    lineno: 0,
+                    expected_span: Span {
+                        line: 0,
+                        range: (0, 3)
+                    },
+                    actual_span: Span {
+                        line: 0,
+                        range: (0, 1)
+                    },
                 }]
             })),
             ctx.verify(),
@@ -660,9 +650,14 @@ mod test {
                 details: vec![WrongAnswerKind::NumOfTokenDiffers {
                     expected: 2,
                     actual: 3,
-                    expected_line_len: 3,
-                    actual_line_len: 5,
-                    lineno: 0,
+                    expected_span: Span {
+                        line: 0,
+                        range: (0, 3)
+                    },
+                    actual_span: Span {
+                        line: 0,
+                        range: (0, 5)
+                    },
                 }]
             })),
             ctx.verify(),
@@ -675,9 +670,14 @@ mod test {
                 details: vec![WrongAnswerKind::NumOfTokenDiffers {
                     expected: 2,
                     actual: 1,
-                    expected_line_len: 3,
-                    actual_line_len: 4,
-                    lineno: 0,
+                    expected_span: Span {
+                        line: 0,
+                        range: (0, 3)
+                    },
+                    actual_span: Span {
+                        line: 0,
+                        range: (0, 4)
+                    },
                 }]
             })),
             ctx.verify(),
@@ -693,11 +693,17 @@ mod test {
                 details: vec![WrongAnswerKind::TokenDiffers {
                     expected: Token::new(
                         TokenKind::Uint(1),
-                        Span(LineColumn::new(0, 0), LineColumn::new(0, 1))
+                        Span {
+                            line: 0,
+                            range: (0, 1)
+                        }
                     ),
                     actual: Token::new(
                         TokenKind::Uint(2),
-                        Span(LineColumn::new(0, 0), LineColumn::new(0, 1))
+                        Span {
+                            line: 0,
+                            range: (0, 1)
+                        }
                     )
                 }]
             })),
@@ -711,11 +717,17 @@ mod test {
                 details: vec![WrongAnswerKind::TokenDiffers {
                     expected: Token::new(
                         TokenKind::String(S("00")),
-                        Span(LineColumn::new(0, 0), LineColumn::new(0, 2))
+                        Span {
+                            line: 0,
+                            range: (0, 2)
+                        }
                     ),
                     actual: Token::new(
                         TokenKind::Uint(0),
-                        Span(LineColumn::new(0, 0), LineColumn::new(0, 1))
+                        Span {
+                            line: 0,
+                            range: (0, 1)
+                        }
                     )
                 }]
             })),
@@ -729,11 +741,17 @@ mod test {
                 details: vec![WrongAnswerKind::TokenDiffers {
                     expected: Token::new(
                         TokenKind::Float(1.0003),
-                        Span(LineColumn::new(0, 0), LineColumn::new(0, 6))
+                        Span {
+                            line: 0,
+                            range: (0, 6)
+                        }
                     ),
                     actual: Token::new(
                         TokenKind::Float(1.0002),
-                        Span(LineColumn::new(0, 0), LineColumn::new(0, 6))
+                        Span {
+                            line: 0,
+                            range: (0, 6)
+                        }
                     )
                 }]
             })),
@@ -747,11 +765,17 @@ mod test {
                 details: vec![WrongAnswerKind::TokenDiffers {
                     expected: Token::new(
                         TokenKind::Float(-0.0003),
-                        Span(LineColumn::new(0, 0), LineColumn::new(0, 7))
+                        Span {
+                            line: 0,
+                            range: (0, 7)
+                        }
                     ),
                     actual: Token::new(
                         TokenKind::Float(-0.0002),
-                        Span(LineColumn::new(0, 0), LineColumn::new(0, 7))
+                        Span {
+                            line: 0,
+                            range: (0, 7)
+                        }
                     )
                 }]
             })),
@@ -765,11 +789,17 @@ mod test {
                 details: vec![WrongAnswerKind::TokenDiffers {
                     expected: Token::new(
                         TokenKind::Int(-1),
-                        Span(LineColumn::new(0, 0), LineColumn::new(0, 2))
+                        Span {
+                            line: 0,
+                            range: (0, 2)
+                        }
                     ),
                     actual: Token::new(
                         TokenKind::String(S("-01")),
-                        Span(LineColumn::new(0, 0), LineColumn::new(0, 3))
+                        Span {
+                            line: 0,
+                            range: (0, 3)
+                        }
                     )
                 }]
             })),
@@ -783,11 +813,17 @@ mod test {
                 details: vec![WrongAnswerKind::TokenDiffers {
                     expected: Token::new(
                         TokenKind::Int(-1),
-                        Span(LineColumn::new(0, 4), LineColumn::new(0, 6))
+                        Span {
+                            line: 0,
+                            range: (4, 6)
+                        }
                     ),
                     actual: Token::new(
                         TokenKind::String(S("-01")),
-                        Span(LineColumn::new(0, 4), LineColumn::new(0, 7))
+                        Span {
+                            line: 0,
+                            range: (4, 7)
+                        }
                     )
                 }]
             })),
@@ -802,31 +838,49 @@ mod test {
                     WrongAnswerKind::TokenDiffers {
                         expected: Token::new(
                             TokenKind::Uint(1),
-                            Span(LineColumn::new(0, 0), LineColumn::new(0, 1))
+                            Span {
+                                line: 0,
+                                range: (0, 1)
+                            }
                         ),
                         actual: Token::new(
                             TokenKind::Uint(4),
-                            Span(LineColumn::new(0, 0), LineColumn::new(0, 1))
+                            Span {
+                                line: 0,
+                                range: (0, 1)
+                            }
                         )
                     },
                     WrongAnswerKind::TokenDiffers {
                         expected: Token::new(
                             TokenKind::Uint(2),
-                            Span(LineColumn::new(0, 2), LineColumn::new(0, 3))
+                            Span {
+                                line: 0,
+                                range: (2, 3)
+                            }
                         ),
                         actual: Token::new(
                             TokenKind::Uint(3),
-                            Span(LineColumn::new(0, 2), LineColumn::new(0, 3))
+                            Span {
+                                line: 0,
+                                range: (2, 3)
+                            }
                         )
                     },
                     WrongAnswerKind::TokenDiffers {
                         expected: Token::new(
                             TokenKind::Int(-1),
-                            Span(LineColumn::new(0, 4), LineColumn::new(0, 6))
+                            Span {
+                                line: 0,
+                                range: (4, 6)
+                            }
                         ),
                         actual: Token::new(
                             TokenKind::String(S("-01")),
-                            Span(LineColumn::new(0, 4), LineColumn::new(0, 7))
+                            Span {
+                                line: 0,
+                                range: (4, 7)
+                            }
                         )
                     }
                 ]
