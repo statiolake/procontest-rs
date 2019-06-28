@@ -1,5 +1,5 @@
 [package]
-name = "procon-test-rs"
+name = "procontest"
 version = "0.1.0"
 authors = ["statiolake <statiolake@gmail.com>"]
 edition = "2018"
