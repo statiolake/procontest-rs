@@ -73,7 +73,7 @@ macro_rules! testcase {
         fn $id() {
             let res = $crate::do_test(stringify!($id), $stdin, $expect);
             if res != $crate::TestResult::Accepted {
-                panic!("{}", format!(&res));
+                panic!("{}", $crate::format(&res));
             }
         }
     };
