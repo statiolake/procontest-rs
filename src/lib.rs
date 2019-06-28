@@ -331,7 +331,7 @@ impl Token {
     }
 }
 
-pub fn format(result: TestResult) -> String {
+pub fn format(result: &TestResult) -> String {
     match result {
         TestResult::Accepted => "Accepted.".into(),
         TestResult::PresentationError => "Presentation error.".into(),
@@ -339,17 +339,17 @@ pub fn format(result: TestResult) -> String {
             "Wrong Answer.\n\nexpected stdout:\n\n{}\nactual stdout:\n\n{}\nerrors:\n\n{}",
             joinl(&wa.context.expected),
             joinl(&wa.context.actual),
-            format_wa(*wa)
+            format_wa(wa)
         ),
         TestResult::RuntimeError(re) => format!("Runtime Error: {}", format_re(re)),
     }
 }
 
-fn format_wa(wa: WrongAnswer) -> String {
+fn format_wa(wa: &WrongAnswer) -> String {
     let mut messages = Vec::new();
     let mut expected_spans = Vec::new();
     let mut actual_spans = Vec::new();
-    for detail in wa.details {
+    for detail in &wa.details {
         messages.push(match detail {
             WrongAnswerKind::NumOfLineDiffers { expected, actual } => format!(
                 "The number of lines is different. expected: {}, actual: {}",
@@ -363,8 +363,8 @@ fn format_wa(wa: WrongAnswer) -> String {
                 actual_span,
             } => {
                 assert_eq!(expected_span.line, actual_span.line);
-                expected_spans.push(expected_span);
-                actual_spans.push(actual_span);
+                expected_spans.push(*expected_span);
+                actual_spans.push(*actual_span);
                 format!(
                     "At line {}: the number of tokens is different. expected: {}, actual: {}",
                     expected_span.line + 1,
@@ -389,10 +389,10 @@ fn format_wa(wa: WrongAnswer) -> String {
 
     let messages = joinl(&messages);
     let diff = format_diff(
-        wa.context.expected,
-        wa.context.actual,
-        expected_spans,
-        actual_spans,
+        &wa.context.expected,
+        &wa.context.actual,
+        &expected_spans,
+        &actual_spans,
     );
 
     format!("{}\n{}", messages, diff)
@@ -408,12 +408,12 @@ fn joinl(ss: &[String]) -> String {
 }
 
 fn format_diff(
-    expected: Vec<String>,
-    actual: Vec<String>,
-    expected_spans: Vec<Span>,
-    actual_spans: Vec<Span>,
+    expected: &[String],
+    actual: &[String],
+    expected_spans: &[Span],
+    actual_spans: &[Span],
 ) -> String {
-    fn fallback(_expected: Vec<String>, _actual: Vec<String>) -> String {
+    fn fallback(_expected: &[String], _actual: &[String]) -> String {
         "WARNING: Cannot determine a terminal size or too narrow terminal.  Cannot use diff view."
             .into()
     }
@@ -443,28 +443,29 @@ fn format_diff(
     let actual_len_max = actual_len.iter().max().copied().unwrap_or(0);
 
     let body = {
+        let linenos: Vec<_> = (1..=max_lineno).map(|x| x.to_string()).collect();
         let lineno_pane = Pane {
-            lines: (1..=max_lineno).map(|x| x.to_string()).collect(),
+            lines: &linenos.iter().map(|x| x.as_str()).collect::<Vec<_>>(),
             width: lineno_width,
         };
 
         let expected_pane = Pane {
-            lines: expected,
+            lines: &expected.iter().map(|x| x.as_str()).collect::<Vec<_>>(),
             width: cmp::min(half, expected_len_max),
         };
         let actual_pane = Pane {
-            lines: actual,
+            lines: &actual.iter().map(|x| x.as_str()).collect::<Vec<_>>(),
             width: cmp::min(half, actual_len_max),
         };
 
         splitv::splitv(
-            vec![lineno_pane, expected_pane, actual_pane],
-            vec![lineno_delim.to_string(), division_delim.to_string()],
+            &[lineno_pane, expected_pane, actual_pane],
+            &[lineno_delim, division_delim],
         )
     };
 
     let span = {
-        let organize_spans = |spans: Vec<Span>| -> Vec<Vec<(usize, usize)>> {
+        let organize_spans = |spans: &[Span]| -> Vec<Vec<(usize, usize)>> {
             let mut organized = vec![Vec::new(); max_lineno];
 
             for span in spans {
@@ -483,31 +484,36 @@ fn format_diff(
         };
 
         let lineno_pane = Pane {
-            lines: vec![" ".to_string(); max_lineno],
+            lines: &vec![" "; max_lineno],
             width: lineno_width,
         };
 
+        let expected_lines = organize_spans(expected_spans)
+            .into_iter()
+            .enumerate()
+            .map(|(i, spans)| convert_span(expected_len.get(i).copied().unwrap_or(0), spans))
+            .collect::<Vec<_>>();
         let expected_pane = Pane {
-            lines: organize_spans(expected_spans)
-                .into_iter()
-                .enumerate()
-                .map(|(i, spans)| convert_span(expected_len.get(i).copied().unwrap_or(0), spans))
-                .collect(),
+            lines: &expected_lines
+                .iter()
+                .map(|x| x.as_str())
+                .collect::<Vec<_>>(),
             width: cmp::min(half, expected_len_max),
         };
 
+        let actual_lines = organize_spans(actual_spans)
+            .into_iter()
+            .enumerate()
+            .map(|(i, spans)| convert_span(actual_len.get(i).copied().unwrap_or(0), spans))
+            .collect::<Vec<_>>();
         let actual_pane = Pane {
-            lines: organize_spans(actual_spans)
-                .into_iter()
-                .enumerate()
-                .map(|(i, spans)| convert_span(actual_len.get(i).copied().unwrap_or(0), spans))
-                .collect(),
+            lines: &actual_lines.iter().map(|x| x.as_str()).collect::<Vec<_>>(),
             width: cmp::min(half, actual_len_max),
         };
 
         splitv::splitv(
-            vec![lineno_pane, expected_pane, actual_pane],
-            vec![lineno_delim.to_string(), division_delim.to_string()],
+            &[lineno_pane, expected_pane, actual_pane],
+            &[lineno_delim, division_delim],
         )
     };
 
@@ -520,7 +526,7 @@ fn format_diff(
     )
 }
 
-fn format_re(re: RuntimeErrorKind) -> String {
+fn format_re(re: &RuntimeErrorKind) -> String {
     match re {
         RuntimeErrorKind::CommandFailed => "The process did not exit successfully.".into(),
         RuntimeErrorKind::InvalidUtf8 => "Process outputs invalid UTF-8.".into(),
@@ -896,6 +902,6 @@ mod test {
             vec![S("4 3 -01"), S("2 3"), S("asdf jkl fsh"), S("")],
             S(""),
         );
-        println!("{}", format(ctx.verify()));
+        println!("{}", format(&ctx.verify()));
     }
 }
