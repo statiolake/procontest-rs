@@ -215,13 +215,7 @@ impl Context {
 }
 
 fn split_into_lines(s: &str) -> impl Iterator<Item = &str> {
-    let mut iter = s.split('\n');
-    assert_eq!(
-        iter.next_back(),
-        Some(""),
-        "expected or actual has no lines.  This is a bug of the *procontest*."
-    );
-    iter
+    s.split('\n')
 }
 
 #[derive(Debug, Clone, PartialEq)]
