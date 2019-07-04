@@ -350,7 +350,7 @@ pub fn format(result: &TestResult) -> String {
         TestResult::Accepted => "Accepted.".into(),
         TestResult::PresentationError => "Presentation error.".into(),
         TestResult::WrongAnswer(wa) => format!(
-            "Wrong Answer.\n\nexpected stdout:\n\n{}\nactual stdout:\n\n{}\nerrors:\n\n{}",
+            "Wrong Answer.\n\n* expected stdout:\n\n{}\n* actual stdout:\n\n{}\n* errors:\n\n{}\n",
             joinl(&wa.context.expected),
             joinl(&wa.context.actual),
             format_wa(wa)
