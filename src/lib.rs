@@ -5,6 +5,8 @@ const BINARY_NAME: &str = "./main";
 
 const EPS: f64 = 1e-8;
 
+const PANE_MINIMUM_SIZE: usize = 20;
+
 #[derive(Debug, PartialEq)]
 pub enum TestResult {
     Accepted,
@@ -350,7 +352,7 @@ pub fn format(result: &TestResult) -> String {
         TestResult::Accepted => "Accepted.".into(),
         TestResult::PresentationError => "Presentation error.".into(),
         TestResult::WrongAnswer(wa) => format!(
-            "Wrong Answer.\n\n* expected stdout:\n\n{}\n* actual stdout:\n\n{}\n* errors:\n\n{}\n",
+            "Wrong Answer.\n\n# expected stdout\n\n{}\n# actual stdout\n\n{}\n# errors\n\n{}\n",
             joinl(&wa.context.expected),
             joinl(&wa.context.actual),
             format_wa(wa)
@@ -364,7 +366,7 @@ fn format_wa(wa: &WrongAnswer) -> String {
     let mut expected_spans = Vec::new();
     let mut actual_spans = Vec::new();
     for detail in &wa.details {
-        messages.push(match detail {
+        let detail = match detail {
             WrongAnswerKind::NumOfLineDiffers { expected, actual } => format!(
                 "The number of lines is different. expected: {}, actual: {}",
                 expected, actual
@@ -398,7 +400,8 @@ fn format_wa(wa: &WrongAnswer) -> String {
                     actual,
                 )
             }
-        })
+        };
+        messages.push(format!("- {}", detail))
     }
 
     let messages = joinl(&messages);
@@ -456,6 +459,9 @@ fn format_diff(
     let expected_len_max = expected_len.iter().max().copied().unwrap_or(0);
     let actual_len_max = actual_len.iter().max().copied().unwrap_or(0);
 
+    let expected_pane_width = cmp::min(half, cmp::max(expected_len_max, PANE_MINIMUM_SIZE));
+    let actual_pane_width = cmp::min(half, cmp::max(actual_len_max, PANE_MINIMUM_SIZE));
+
     let body = {
         let linenos: Vec<_> = (1..=max_lineno).map(|x| x.to_string()).collect();
         let lineno_pane = Pane {
@@ -465,11 +471,11 @@ fn format_diff(
 
         let expected_pane = Pane {
             lines: &expected.iter().map(|x| x.as_str()).collect::<Vec<_>>(),
-            width: cmp::min(half, expected_len_max),
+            width: expected_pane_width,
         };
         let actual_pane = Pane {
             lines: &actual.iter().map(|x| x.as_str()).collect::<Vec<_>>(),
-            width: cmp::min(half, actual_len_max),
+            width: actual_pane_width,
         };
 
         splitv::splitv(
@@ -512,7 +518,7 @@ fn format_diff(
                 .iter()
                 .map(|x| x.as_str())
                 .collect::<Vec<_>>(),
-            width: cmp::min(half, expected_len_max),
+            width: expected_pane_width,
         };
 
         let actual_lines = organize_spans(actual_spans)
@@ -522,7 +528,7 @@ fn format_diff(
             .collect::<Vec<_>>();
         let actual_pane = Pane {
             lines: &actual_lines.iter().map(|x| x.as_str()).collect::<Vec<_>>(),
-            width: cmp::min(half, actual_len_max),
+            width: actual_pane_width,
         };
 
         splitv::splitv(
