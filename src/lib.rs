@@ -237,7 +237,7 @@ impl Context {
 }
 
 fn split_into_lines(s: &str) -> impl Iterator<Item = &str> {
-    s.split('\n')
+    s.split('\n').map(|x| x.trim_end_matches('\r'))
 }
 
 #[derive(Debug, Clone, PartialEq)]
