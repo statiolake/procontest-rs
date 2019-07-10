@@ -64,7 +64,7 @@ pub enum RuntimeErrorKind {
 #[macro_export]
 macro_rules! testcase {
     (id: $id:ident) => {
-        testcase! {
+        $crate::testcase! {
             id: $id,
             stdin: include_str!(concat!(stringify!($id), "_in.txt")),
             expect: include_str!(concat!(stringify!($id), "_out.txt")),
